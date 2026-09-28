@@ -1,0 +1,13 @@
+[package]
+name = "raytracer"
+version = "0.1.0"
+edition = "2024"
+
+[profile.dev]
+opt-level = 3
+debug = false
+
+[dependencies]
+noise = "0.9.0"
+rand = "0.10.2"
+raylib = { version = "6.0.0", features = ["SUPPORT_IMAGE_GENERATION"] }
