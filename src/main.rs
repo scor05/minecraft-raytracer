@@ -1,4 +1,5 @@
 mod camera;
+mod cube;
 mod framebuffer;
 mod light;
 mod material;
@@ -11,7 +12,6 @@ use crate::framebuffer::Framebuffer;
 use crate::light::Light;
 use crate::material::Material;
 use crate::ray_intersect::{Intersect, RayIntersect};
-use crate::sphere::Sphere;
 use procedural::*;
 use rand::RngExt;
 use raylib::prelude::*;
@@ -95,10 +95,10 @@ fn offset_origin(intersect: &Intersect, direction: &Vector3) -> Vector3 {
 // no va a llegar y va a topar con el primer objeto.
 // retorna un f32 porque las sombras no reflejan la forma exacta de lo que las castea, sino que son
 // difuminado. Retorna un valor de [0,1] para ver qué tan difuminado está
-fn cast_shadow(
+fn cast_shadow<T: RayIntersect>(
     intersect: &Intersect, // Para saber en dónde del segundo objeto topó
     light: &Light,         // hacia dónde iba el rayo
-    objects: &[Sphere],    // para checkear todos los objetos
+    objects: &[T],         // para checkear todos los objetos
 ) -> f32 {
     // para obtener la dirección de la luz desde el punto de intersecto inicial y normalizar.
     let light_dir = (light.pos - intersect.point).normalize(); // Para ir de AB se resta B - A,
@@ -121,10 +121,10 @@ fn cast_shadow(
     0.0
 }
 
-fn cast_ray(
+fn cast_ray<T: RayIntersect>(
     ray_origin: &Vector3,
     ray_direction: &Vector3,
-    objects: &[Sphere],
+    objects: &[T],
     light: &Light,
     depth: u32, // depth de recursión
 ) -> Color {
@@ -241,46 +241,68 @@ fn vector_to_color(vec: Vector3) -> Color {
     }
 }
 
-fn draw(fb: &mut Framebuffer, objects: &[Sphere], camera: &Camera, light: &Light, moving: &bool) {
-    let width = fb.width;
-    let height = fb.height;
+fn draw<T: RayIntersect + Sync>(
+    fb: &mut Framebuffer,
+    objects: &[T],
+    camera: &Camera,
+    light: &Light,
+    moving: &bool,
+) {
+    let width = fb.width as usize;
+    let height = fb.height as usize;
+    if width == 0 || height == 0 {
+        return;
+    }
+
     // anchura del plano de la imagen a distancia 1 (adyacente * tanx = op) con ady=1
     // FOV/2 para tener la mitad del plano
     let perspective_scale = (FOV / 2.0).tan();
     let aspect_ratio = width as f32 / height as f32;
+    let moving = *moving;
 
-    // agregar un random chance de literalmente no renderizar nada SOLO MIENTRAS SE ESTÁ
-    // MOVIENDO LA CÁMARA, lo cual mejora performance un monton. Aprox 90% chance.
-    let mut rng = rand::rng();
-    for x in 0..width {
-        for y in 0..height {
-            let range = rng.random_range(0..100);
-            if !*moving || range >= 95 {
-                // multiplicar por 2 para corregir que se usó solo FOV/2 en perspective_scale
-                // x / width normaliza x de [0..width] a [0, 2] porque x llega a width en x=fb.width
-                // como el *2 deja x,y en [0,2], se resta 1 para que ambos queden en [-1,1]
-                let mut screen_x = (2.0 * x as f32) / width as f32 - 1.0;
-                let mut screen_y = (2.0 * y as f32) / height as f32 - 1.0;
+    // detecta cores disponibles del cpu
+    let worker_count = thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(1)
+        .min(height);
+    let rows_per_worker = height.div_ceil(worker_count);
+    let mut pixels = vec![Color::BLACK; width * height];
 
-                // perspective_scale cambia el rango de [-1, 1] a que sea de la longitud
-                // del plano que se calculó (ver arriba) para que muestre exactamente una longitud
-                // en cada coordenada que produzca un ángulo de FOV.
-                // en x se multiplica por aspect_ratio para que se queden los pixeles verticales
-                // bien y solo se ajusten horizontalmente
-                screen_x = screen_x * aspect_ratio as f32 * perspective_scale;
-                screen_y = screen_y * perspective_scale;
+    thread::scope(|scope| {
+        for (chunk_index, rows) in pixels.chunks_mut(width * rows_per_worker).enumerate() {
+            let starting_y = chunk_index * rows_per_worker;
 
-                // This is the ray direction in camera space. Convert it to world space
-                // so camera orbiting changes the view of the scene.
-                let camera_direction = Vector3::new(screen_x, screen_y, -1.0).normalize();
-                let world_direction = camera.basis_change(&camera_direction).normalize();
+            scope.spawn(move || {
+                let mut rng = rand::rng();
 
-                let pixel_color = cast_ray(&camera.eye, &world_direction, objects, light, 0);
-                fb.set_current_color(pixel_color);
-            } else {
-                fb.set_current_color(Color::BLACK);
-            }
-            fb.set_pixel(x, y);
+                for (local_y, row) in rows.chunks_mut(width).enumerate() {
+                    let y = starting_y + local_y;
+
+                    for (x, pixel) in row.iter_mut().enumerate() {
+                        // agregar un random chance de literalmente no renderizar nada
+                        if moving && rng.random_range(0..100) < 95 {
+                            continue;
+                        }
+
+                        // pantalla -> camara
+                        let screen_x = (2.0 * x as f32 / width as f32 - 1.0)
+                            * aspect_ratio
+                            * perspective_scale;
+                        let screen_y = (2.0 * y as f32 / height as f32 - 1.0) * perspective_scale;
+
+                        let camera_direction = Vector3::new(screen_x, screen_y, -1.0).normalize();
+                        let world_direction = camera.basis_change(&camera_direction).normalize();
+
+                        *pixel = cast_ray(&camera.eye, &world_direction, objects, light, 0);
+                    }
+                }
+            });
+        }
+    });
+
+    for (y, row) in pixels.chunks(width).enumerate() {
+        for (x, color) in row.iter().copied().enumerate() {
+            fb.set_pixel_color(x as u32, y as u32, color);
         }
     }
 }
