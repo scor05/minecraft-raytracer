@@ -17,8 +17,7 @@ en `./assets/textures/`. Para ejecutar el código, el siguiente comando abrirá 
 cargo run
 ```
 
-Un detalle que es de notar es que para optimizar un poco más el código (debido a que mi laptop estaba sobrecalentándose solo con tener el 
-raytracer abierto sin mover la cámara) agregué un 95% de probabilidad de que cada pixel dado no se renderice mientras que está en movimiento 
+Un detalle que es de notar es que para optimizar un poco más el código (debido a que mi laptop estaba sobrecalentándose al mover la cámara y mi uso de CPU estaba llegando casi al 100%) agregué un 95% de probabilidad de que cada pixel dado no se renderice mientras que está en movimiento 
 la cámara, lo cual si se desea se puede quitar poniendo la constante `PIXEL_OPTIMIZATION` en `./src/main.rs:28` como falsa. El código ya está 
 optimizado con paralelismo dividiendo las filas de pixeles del framebuffer entre los núcleos disponibles del CPU con `thread::available_parallelism`, 
 los cuales cada uno en su scope calculan los rayos y colores correspondientes a sus pixeles y luego se combinan al ya procesar todo el frame, 
