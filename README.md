@@ -4,7 +4,7 @@ En este repositorio se encuentra mi implementación en Rust (y parte con el cód
 una escena usando cubos de minecraft, la cual muestra un mini castillo en donde el jugador vivió adyacente a una isla de
 con un portal al Nether que rompió despues de haber conquistado dicha dimensión (mini lore dump).
 
-La escena está compuesta de dos islas principales: una hecha de tierra y grama y otra hecha de netherrack. En la primera de estas está un castillo con una bandera en su cima, un árbol a su derecha, un mini río (con reflexiones y refracciones en el agua) en frente de él, un cofre y varios barriles donde se almacenaban supplies varias. Dentro del castillo hay dos linternas que emiten luz y un bloque de oro que el jugador tomó como trofeo del Nether.
+La escena está compuesta de dos islas principales (las cuales fueron generadas procedimentalmente con el algorítmo de Perlin en `./src/procedural.rs`, asímismo como las hojas del árbol): una hecha de tierra y grama y otra hecha de netherrack. En la primera de estas está un castillo con una bandera en su cima, un árbol a su derecha, un mini río (con reflexiones y refracciones en el agua) en frente de él, un cofre y varios barriles donde se almacenaban supplies varias. Dentro del castillo hay dos linternas que emiten luz y un bloque de oro que el jugador tomó como trofeo del Nether.
 
 Esa isla está conectada a la otra mediante un puente pequeño hecho de oak planks de 4 bloques de longitud, en la cual se encuentra un portal al nether roto en su esquina superior. Encima del portal quedaron dos bloques de oro puestos por el jugador y una plataforma de piedra para simbolizar que este portal ya funciona solo como un monumento. 
 
