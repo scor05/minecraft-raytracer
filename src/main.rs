@@ -6,12 +6,14 @@ mod material;
 mod procedural;
 mod ray_intersect;
 mod sphere;
+mod textures;
 
 use crate::camera::Camera;
 use crate::framebuffer::Framebuffer;
 use crate::light::Light;
-use crate::material::Material;
+use crate::material::load_materials;
 use crate::ray_intersect::{Intersect, RayIntersect};
+use crate::textures::TextureStore;
 use procedural::*;
 use rand::RngExt;
 use raylib::prelude::*;
@@ -20,12 +22,13 @@ use std::thread;
 use std::time::Duration;
 
 const FOV: f32 = PI / 2.0;
-const FPS: u64 = 500;
+const FPS: u64 = 30;
 const MS: u64 = 1000 / FPS;
 const SHADOW_BIAS: f32 = 1e-4; // es qué tanto sumarle a los vectores que entran de la esfera
 // viene de problemas de redondeo
 const MAX_REFLECTIONS: u8 = 2;
-const TERRAIN_SIZE: i32 = 5;
+const TERRAIN_SIZE: i32 = 10;
+const RENDER_CHANCE: i32 = 98; // pobre compu no aguanta
 
 // con esta función hacer que cada objeto al ser intersectado tire un rayo
 // con el mismo ángulo con respecto a la normal para causar esas reflecciones.
@@ -126,6 +129,7 @@ fn cast_ray<T: RayIntersect>(
     ray_direction: &Vector3,
     objects: &[T],
     light: &Light,
+    textures: &TextureStore,
     depth: u32, // depth de recursión
 ) -> Color {
     let background_color = Color::new(20, 20, 20, 255);
@@ -158,10 +162,14 @@ fn cast_ray<T: RayIntersect>(
 
     // diffuse
     let diffuse_intensity = intersect.normal.dot(light_dir).max(0.0);
+    let texture_color = textures.sample(
+        intersect.material.textures.for_face(intersect.face),
+        intersect.uv,
+    );
     let material_color = Vector3::new(
-        intersect.material.diffuse.r as f32,
-        intersect.material.diffuse.g as f32,
-        intersect.material.diffuse.b as f32,
+        texture_color.r as f32 * intersect.material.diffuse.r as f32 / 255.0,
+        texture_color.g as f32 * intersect.material.diffuse.g as f32 / 255.0,
+        texture_color.b as f32 * intersect.material.diffuse.b as f32 / 255.0,
     );
     let diffuse =
         material_color * diffuse_intensity * intersect.material.albedo[0] * light_intensity;
@@ -190,6 +198,7 @@ fn cast_ray<T: RayIntersect>(
             &reflect_dir,
             objects,
             light,
+            textures,
             depth + 1,
         ));
     }
@@ -213,6 +222,7 @@ fn cast_ray<T: RayIntersect>(
             &refract_dir,
             objects,
             light,
+            textures,
             depth + 1,
         ))
     } else {
@@ -246,6 +256,7 @@ fn draw<T: RayIntersect + Sync>(
     objects: &[T],
     camera: &Camera,
     light: &Light,
+    textures: &TextureStore,
     moving: &bool,
 ) {
     let width = fb.width as usize;
@@ -280,7 +291,7 @@ fn draw<T: RayIntersect + Sync>(
 
                     for (x, pixel) in row.iter_mut().enumerate() {
                         // agregar un random chance de literalmente no renderizar nada
-                        if moving && rng.random_range(0..100) < 95 {
+                        if moving && rng.random_range(0..100) < RENDER_CHANCE {
                             continue;
                         }
 
@@ -293,7 +304,8 @@ fn draw<T: RayIntersect + Sync>(
                         let camera_direction = Vector3::new(screen_x, screen_y, -1.0).normalize();
                         let world_direction = camera.basis_change(&camera_direction).normalize();
 
-                        *pixel = cast_ray(&camera.eye, &world_direction, objects, light, 0);
+                        *pixel =
+                            cast_ray(&camera.eye, &world_direction, objects, light, textures, 0);
                     }
                 }
             });
@@ -308,8 +320,8 @@ fn draw<T: RayIntersect + Sync>(
 }
 
 fn main() {
-    let window_width = 720;
-    let window_height = 720;
+    let window_width = 400;
+    let window_height = 300;
 
     let (mut window, raylib_thread) = raylib::init()
         .size(window_width, window_height)
@@ -319,72 +331,17 @@ fn main() {
 
     let mut framebuffer = Framebuffer::new(window_width as u32, window_height as u32);
 
-    let rubber = Material {
-        diffuse: Color::new(255, 0, 0, 255),
-        albedo: [0.40, 0.60, 0.02, 0.0],
-        specular: 10.0,
-        refraction_index: 1.52,
-    };
+    let material_library = load_materials("./assets/textures/")
+        .unwrap_or_else(|error| panic!("Could not load materials: {error}"));
 
-    let steel = Material {
-        diffuse: Color::new(180, 180, 180, 255),
-        albedo: [0.99, 0.01, 0.90, 0.0],
-        specular: 100.0,
-        refraction_index: 2.50,
-    };
-
-    let colored_material =
-        |r, g, b, specular, reflectivity, transparency, refraction_index| Material {
-            diffuse: Color::new(r, g, b, 255),
-            albedo: [0.75, 0.25, reflectivity, transparency],
-            specular,
-            refraction_index,
-        };
-
-    // Approximate visible-light IORs for representative real materials.
-    // White is treated as moissanite, giving it the highest IOR in the scene.
-    let white = colored_material(255, 255, 255, 240.0, 0.90, 0.80, 2.65);
-    let orange = colored_material(255, 125, 35, 24.0, 0.08, 0.08, 1.50);
-    let gold = colored_material(255, 205, 45, 48.0, 0.80, 0.0, 1.55);
-    let emerald = colored_material(35, 205, 105, 36.0, 0.10, 0.55, 1.58);
-    let cyan = colored_material(35, 205, 225, 64.0, 0.55, 0.75, 1.33);
-    let blue = colored_material(45, 95, 235, 72.0, 0.35, 0.35, 1.50);
-    let violet = colored_material(135, 65, 225, 56.0, 0.75, 0.30, 1.54);
-    let magenta = colored_material(235, 55, 175, 40.0, 0.12, 0.15, 1.49);
-    let pink = colored_material(255, 125, 165, 28.0, 0.45, 0.25, 1.46);
-    let lime = colored_material(155, 225, 55, 20.0, 0.0, 0.10, 1.52);
-
-    /*
-    let objects = [
-        Sphere {
-            center: Vector3::new(-3.2, -2.0, 6.5),
-            radius: 1.0,
-            material: rubber,
-        },
-        Sphere {
-            center: Vector3::new(-0.5, -2.4, 7.5),
-            radius: 1.1,
-            material: white,
-        },
-        Sphere {
-            center: Vector3::new(2.5, -2.0, 7.0),
-            radius: 1.2,
-            material: gold,
-        },
-        Sphere {
-            center: Vector3::new(-0.8, 0.5, 6.2),
-            radius: 1.0,
-            material: magenta,
-        },
-        Sphere {
-            center: Vector3::new(2.0, 0.5, 8.2),
-            radius: 1.4,
-            material: emerald,
-        },
-    ];
-    */
-
-    let objects = generate_terrain(TERRAIN_SIZE, TERRAIN_SIZE);
+    let objects = generate_terrain(
+        TERRAIN_SIZE,
+        TERRAIN_SIZE,
+        5,
+        4.0,
+        material_library.materials["grass"],
+        material_library.materials["dirt"],
+    );
 
     let mut camera = Camera::new(
         Vector3::new(0.0, 0.0, 0.0), // eye
@@ -395,11 +352,11 @@ fn main() {
     let light = Light {
         // Frente a las esferas y ligeramente descentrada para que ambas tengan
         // una cara iluminada y una zona de sombra visible.
-        pos: Vector3::new(5.0, -5.0, 5.0),
+        pos: Vector3::new(0.0, 0.0, 0.0),
     };
 
     let rotation_speed = PI / 100.0;
-    let movement_speed = 0.5;
+    let movement_speed = 0.75;
     let zoom_speed = 0.3;
 
     while !window.window_should_close() {
@@ -442,7 +399,6 @@ fn main() {
             camera.move_up(movement_speed);
         }
 
-        // Zoom changes the distance between the eye and focal point.
         if window.is_key_down(KeyboardKey::KEY_Q) {
             camera.zoom(zoom_speed);
         }
@@ -463,7 +419,14 @@ fn main() {
             || window.is_key_down(KeyboardKey::KEY_Q)
             || window.is_key_down(KeyboardKey::KEY_E);
 
-        draw(&mut framebuffer, &objects, &camera, &light, &moving);
+        draw(
+            &mut framebuffer,
+            &objects,
+            &camera,
+            &light,
+            &material_library.textures,
+            &moving,
+        );
 
         thread::sleep(Duration::from_millis(MS));
 

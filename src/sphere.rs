@@ -1,6 +1,6 @@
 use crate::material::Material;
-use crate::ray_intersect::{Intersect, RayIntersect};
-use raylib::prelude::Vector3;
+use crate::ray_intersect::{Intersect, RayIntersect, SurfaceFace};
+use raylib::prelude::{Vector2, Vector3};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Sphere {
@@ -47,6 +47,8 @@ impl RayIntersect for Sphere {
             distance,
             normal,
             point,
+            face: SurfaceFace::Curved,
+            uv: Vector2::zero(),
         })
     }
 }

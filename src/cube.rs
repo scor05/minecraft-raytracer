@@ -1,6 +1,6 @@
 use crate::material::Material;
-use crate::ray_intersect::{Intersect, RayIntersect};
-use raylib::prelude::Vector3;
+use crate::ray_intersect::{Intersect, RayIntersect, SurfaceFace};
+use raylib::prelude::{Vector2, Vector3};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Cube {
@@ -69,13 +69,68 @@ impl RayIntersect for Cube {
             return None;
         };
 
+        let point = *ray_origin + *ray_direction * distance;
+        let (face, uv) = face_and_uv(point, normal, min, max, self.length);
+
         Some(Intersect {
             material: self.material,
             distance,
             normal,
-            point: *ray_origin + *ray_direction * distance,
+            point,
+            face,
+            uv,
         })
     }
+}
+
+fn face_and_uv(
+    point: Vector3,
+    normal: Vector3,
+    min: Vector3,
+    max: Vector3,
+    length: f32,
+) -> (SurfaceFace, Vector2) {
+    // In this scene, negative Y is upward and positive Y goes down into the
+    // terrain. Image V coordinates also grow downward from the top row.
+    let (face, u, v) = if normal.y < -0.5 {
+        (
+            SurfaceFace::Top,
+            (point.x - min.x) / length,
+            (point.z - min.z) / length,
+        )
+    } else if normal.y > 0.5 {
+        (
+            SurfaceFace::Bottom,
+            (point.x - min.x) / length,
+            (max.z - point.z) / length,
+        )
+    } else if normal.z < -0.5 {
+        (
+            SurfaceFace::Front,
+            (point.x - min.x) / length,
+            (point.y - min.y) / length,
+        )
+    } else if normal.z > 0.5 {
+        (
+            SurfaceFace::Back,
+            (max.x - point.x) / length,
+            (point.y - min.y) / length,
+        )
+    } else if normal.x < -0.5 {
+        (
+            SurfaceFace::Left,
+            (point.z - min.z) / length,
+            (point.y - min.y) / length,
+        )
+    } else {
+        (
+            SurfaceFace::Right,
+            (max.z - point.z) / length,
+            (point.y - min.y) / length,
+        )
+    };
+
+    (face, Vector2::new(u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)))
 }
 
 #[allow(clippy::too_many_arguments)]
