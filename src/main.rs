@@ -14,7 +14,9 @@ use crate::framebuffer::Framebuffer;
 use crate::light::Light;
 use crate::material::load_materials;
 use crate::ray_intersect::{Intersect, RayIntersect};
-use crate::structures::{castle_lantern_center, generate_castle, generate_tree};
+use crate::structures::{
+    castle_lantern_center, generate_bridge, generate_castle, generate_ruined_portal, generate_tree,
+};
 use crate::textures::{TextureId, TextureStore};
 use procedural::*;
 use rand::RngExt;
@@ -23,8 +25,11 @@ use std::f32::consts::PI;
 use std::thread;
 use std::time::Duration;
 
+const WINDOW_WIDTH: u32 = 400;
+const WINDOW_HEIGHT: u32 = 300;
+const PIXEL_OPTIMIZATION: bool = true;
 const FOV: f32 = PI / 2.0;
-const FPS: u64 = 30;
+const FPS: u64 = 60;
 const MS: u64 = 1000 / FPS;
 const SHADOW_BIAS: f32 = 1e-4; // es qué tanto sumarle a los vectores que entran de la esfera
 // viene de problemas de redondeo
@@ -32,7 +37,9 @@ const MAX_REFLECTIONS: u8 = 2;
 const ISLAND_RADIUS: i32 = 16;
 const BLOCK_SIZE: f32 = 3.0;
 const ISLAND_HEIGHT: i32 = 5;
-const RENDER_CHANCE: i32 = 98; // pobre compu no aguanta
+const BRIDGE_LENGTH: i32 = 4;
+const BRIDGE_WIDTH: i32 = 2;
+const RENDER_CHANCE: i32 = 95; // pobre compu no aguanta
 
 // con esta función hacer que cada objeto al ser intersectado tire un rayo
 // con el mismo ángulo con respecto a la normal para causar esas reflecciones.
@@ -173,11 +180,20 @@ fn cast_ray<T: RayIntersect>(
     let mut specular = Vector3::zero();
 
     for light in lights {
-        let light_dir = (light.pos - intersect.point).normalize();
-        let shadow = cast_shadow(&intersect, light, objects);
-        let received_intensity = (1.0 - shadow) * light.intensity.max(0.0);
+        let light_intensity = light.intensity.max(0.0);
+        if light_intensity <= 0.0 {
+            continue;
+        }
 
+        let light_dir = (light.pos - intersect.point).normalize();
         let diffuse_intensity = intersect.normal.dot(light_dir).max(0.0);
+        if diffuse_intensity <= 0.0 {
+            continue;
+        }
+
+        let shadow = cast_shadow(&intersect, light, objects);
+        let received_intensity = (1.0 - shadow) * light_intensity;
+
         diffuse +=
             material_color * diffuse_intensity * intersect.material.albedo[0] * received_intensity;
 
@@ -296,7 +312,8 @@ fn draw<T: RayIntersect + Sync>(
 
                     for (x, pixel) in row.iter_mut().enumerate() {
                         // agregar un random chance de literalmente no renderizar nada
-                        if moving && rng.random_range(0..100) < RENDER_CHANCE {
+                        if moving && rng.random_range(0..100) < RENDER_CHANCE && PIXEL_OPTIMIZATION
+                        {
                             continue;
                         }
 
@@ -332,8 +349,8 @@ fn draw<T: RayIntersect + Sync>(
 }
 
 fn main() {
-    let window_width = 400;
-    let window_height = 300;
+    let window_width = WINDOW_WIDTH;
+    let window_height = WINDOW_HEIGHT;
     let grass_island_center = Vector3::new(24.0, 0.0, 24.0);
 
     let (mut window, raylib_thread) = raylib::init()
@@ -380,16 +397,52 @@ fn main() {
         &material_library.materials,
     ));
 
+    let nether_island_origin = grass_island_center
+        - Vector3::new(
+            0.0,
+            0.0,
+            (ISLAND_RADIUS + BRIDGE_LENGTH) as f32 * BLOCK_SIZE,
+        );
+    objects.extend(generate_island(
+        nether_island_origin,
+        ISLAND_RADIUS,
+        ISLAND_RADIUS,
+        ISLAND_HEIGHT,
+        BLOCK_SIZE,
+        material_library.materials["netherrack"],
+        material_library.materials["netherrack"],
+    ));
+    objects.extend(generate_bridge(
+        grass_island_center,
+        ISLAND_RADIUS,
+        BRIDGE_LENGTH,
+        BRIDGE_WIDTH,
+        BLOCK_SIZE,
+        material_library.materials["oak_plank"],
+    ));
+    objects.extend(generate_ruined_portal(
+        nether_island_origin,
+        BLOCK_SIZE,
+        &material_library.materials,
+    ));
+
     let island_midpoint = grass_island_center
         + Vector3::new(
             (ISLAND_RADIUS - 1) as f32 * BLOCK_SIZE * 0.5,
             0.0,
             (ISLAND_RADIUS - 1) as f32 * BLOCK_SIZE * 0.5,
         );
+    let nether_island_midpoint = nether_island_origin
+        + Vector3::new(
+            (ISLAND_RADIUS - 1) as f32 * BLOCK_SIZE * 0.5,
+            0.0,
+            (ISLAND_RADIUS - 1) as f32 * BLOCK_SIZE * 0.5,
+        );
+    let scene_midpoint = (island_midpoint + nether_island_midpoint) * 0.5;
     let mut camera = Camera::new(
-        island_midpoint + Vector3::new(0.0, -18.0, -60.0), // eye
-        island_midpoint + Vector3::new(0.0, -9.0, 0.0),    // center
-        Vector3::new(0.0, 1.0, 0.0),                       // up, perpendicular a center
+        scene_midpoint + Vector3::new(0.0, -24.0, -90.0), // eye
+        scene_midpoint + Vector3::new(0.0, -8.0, 0.0),    // center
+        Vector3::new(0.0, 1.0, 0.0),                      // up, perpendicular a center
     );
 
     let lantern_center = castle_lantern_center(castle_origin, BLOCK_SIZE);
@@ -403,8 +456,13 @@ fn main() {
         grass_island_center - Vector3::new(5.0 * BLOCK_SIZE, 2.0 * BLOCK_SIZE, 5.0 * BLOCK_SIZE);
     let lights = [
         Light {
-            pos: lantern_center,
-            intensity: 2.0,
+            pos: lantern_center - Vector3::new(BLOCK_SIZE, -BLOCK_SIZE * 0.25, BLOCK_SIZE),
+            intensity: 1.0,
+            source_radius: 1.5,
+        },
+        Light {
+            pos: lantern_center + Vector3::new(BLOCK_SIZE, BLOCK_SIZE * 0.25, BLOCK_SIZE),
+            intensity: 1.0,
             source_radius: 1.5,
         },
         Light {
@@ -414,7 +472,13 @@ fn main() {
         },
         Light {
             pos: close_left_light,
-            intensity: 1.7,
+            intensity: 1.4,
+            source_radius: 0.0,
+        },
+        Light {
+            pos: nether_island_origin
+                - Vector3::new(10.0 * BLOCK_SIZE, 10.0 * BLOCK_SIZE, 10.0 * BLOCK_SIZE),
+            intensity: 1.4,
             source_radius: 0.0,
         },
     ];
@@ -422,10 +486,9 @@ fn main() {
     let rotation_speed = PI / 50.0;
     let movement_speed = 1.25;
     let zoom_speed = 1.0;
+    let mut was_moving = false;
 
     while !window.window_should_close() {
-        framebuffer.clear();
-
         // para mover es yaw, pitch (x, y)
         if window.is_key_down(KeyboardKey::KEY_LEFT) {
             camera.rotate(-rotation_speed, 0.0);
@@ -482,15 +545,21 @@ fn main() {
             || window.is_key_down(KeyboardKey::KEY_Q)
             || window.is_key_down(KeyboardKey::KEY_E);
 
-        draw(
-            &mut framebuffer,
-            &objects,
-            &camera,
-            &lights,
-            &material_library.textures,
-            material_library.skybox,
-            &moving,
-        );
+        // solo renderizar cuando se mueva la cámara
+        let should_render = camera.is_changed() || was_moving;
+        if should_render {
+            framebuffer.clear();
+            draw(
+                &mut framebuffer,
+                &objects,
+                &camera,
+                &lights,
+                &material_library.textures,
+                material_library.skybox,
+                &moving,
+            );
+        }
+        was_moving = moving;
 
         thread::sleep(Duration::from_millis(MS));
 

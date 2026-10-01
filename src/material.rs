@@ -172,9 +172,9 @@ pub fn load_materials(path: impl AsRef<Path>) -> Result<MaterialLibrary, String>
         (
             "crying_obsidian",
             "crying_obsidian.png",
-            [0.55, 0.2, 0.35, 0.0],
-            96.0,
-            1.55,
+            [1.0, 0.05, 0.0, 0.0],
+            255.0,
+            1.5,
         ),
         ("glass", "glass.png", [0.05, 0.2, 0.2, 0.9], 128.0, 1.5),
         (
@@ -184,7 +184,7 @@ pub fn load_materials(path: impl AsRef<Path>) -> Result<MaterialLibrary, String>
             16.0,
             1.5,
         ),
-        ("gold", "gold.png", [0.45, 0.25, 0.65, 0.0], 128.0, 1.47),
+        ("gold", "gold.png", [0.8, 0.15, 0.1, 0.0], 60.0, 1.47),
         (
             "mossy_cobble",
             "mossy_cobble.png",
@@ -199,14 +199,14 @@ pub fn load_materials(path: impl AsRef<Path>) -> Result<MaterialLibrary, String>
             12.0,
             1.5,
         ),
-        ("oak_log", "oak_log.png", [0.9, 0.1, 0.0, 0.0], 12.0, 1.53),
         (
-            "obsidian",
-            "obsidian.png",
-            [0.6, 0.15, 0.3, 0.0],
-            96.0,
-            1.55,
+            "oak_plank",
+            "oak_plank.png",
+            [0.85, 0.15, 0.02, 0.0],
+            16.0,
+            1.5,
         ),
+        ("obsidian", "obsidian.png", [1.0, 0.02, 0.0, 0.0], 5.0, 1.55),
         (
             "red_carpet",
             "red_carpet.png",
