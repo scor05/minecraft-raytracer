@@ -6,6 +6,7 @@ mod material;
 mod procedural;
 mod ray_intersect;
 mod sphere;
+mod structures;
 mod textures;
 
 use crate::camera::Camera;
@@ -13,6 +14,7 @@ use crate::framebuffer::Framebuffer;
 use crate::light::Light;
 use crate::material::load_materials;
 use crate::ray_intersect::{Intersect, RayIntersect};
+use crate::structures::{generate_castle, generate_tree};
 use crate::textures::TextureStore;
 use procedural::*;
 use rand::RngExt;
@@ -27,7 +29,9 @@ const MS: u64 = 1000 / FPS;
 const SHADOW_BIAS: f32 = 1e-4; // es qué tanto sumarle a los vectores que entran de la esfera
 // viene de problemas de redondeo
 const MAX_REFLECTIONS: u8 = 2;
-const TERRAIN_SIZE: i32 = 10;
+const ISLAND_RADIUS: i32 = 16;
+const BLOCK_SIZE: f32 = 3.0;
+const ISLAND_HEIGHT: i32 = 5;
 const RENDER_CHANCE: i32 = 98; // pobre compu no aguanta
 
 // con esta función hacer que cada objeto al ser intersectado tire un rayo
@@ -233,7 +237,8 @@ fn cast_ray<T: RayIntersect>(
     let reflection = reflect_color * reflectivity;
     let refraction = refract_color * transparency;
 
-    let color = diffuse + specular + reflection + refraction;
+    let emission = material_color * intersect.material.emission;
+    let color = diffuse + specular + reflection + refraction + emission;
 
     vector_to_color(color)
 }
@@ -322,6 +327,7 @@ fn draw<T: RayIntersect + Sync>(
 fn main() {
     let window_width = 400;
     let window_height = 300;
+    let grass_island_center = Vector3::new(24.0, 0.0, 24.0);
 
     let (mut window, raylib_thread) = raylib::init()
         .size(window_width, window_height)
@@ -334,25 +340,55 @@ fn main() {
     let material_library = load_materials("./assets/textures/")
         .unwrap_or_else(|error| panic!("Could not load materials: {error}"));
 
-    let objects = generate_terrain(
-        TERRAIN_SIZE,
-        TERRAIN_SIZE,
-        5,
-        4.0,
+    let mut objects = generate_island(
+        grass_island_center,
+        ISLAND_RADIUS,
+        ISLAND_RADIUS,
+        ISLAND_HEIGHT,
+        BLOCK_SIZE,
         material_library.materials["grass"],
         material_library.materials["dirt"],
     );
 
+    replace_top_layer_with_river(
+        &mut objects,
+        grass_island_center,
+        ISLAND_RADIUS,
+        ISLAND_RADIUS,
+        BLOCK_SIZE,
+        material_library.materials["water"],
+    );
+
+    let castle_origin = grass_island_center + Vector3::new(6.0 * BLOCK_SIZE, 0.0, 5.0 * BLOCK_SIZE);
+    objects.extend(generate_castle(
+        castle_origin,
+        BLOCK_SIZE,
+        &material_library.materials,
+    ));
+
+    let tree_ground = grass_island_center + Vector3::new(2.0 * BLOCK_SIZE, 0.0, 7.0 * BLOCK_SIZE);
+    objects.extend(generate_tree(
+        tree_ground,
+        BLOCK_SIZE,
+        &material_library.materials,
+    ));
+
+    let island_midpoint = grass_island_center
+        + Vector3::new(
+            (ISLAND_RADIUS - 1) as f32 * BLOCK_SIZE * 0.5,
+            0.0,
+            (ISLAND_RADIUS - 1) as f32 * BLOCK_SIZE * 0.5,
+        );
     let mut camera = Camera::new(
-        Vector3::new(0.0, 0.0, 0.0), // eye
-        Vector3::new(0.0, 0.0, 5.0), // hacia dónde inicia viendo, center
-        Vector3::new(0.0, 1.0, 0.0), // up, perpendicular a center
+        island_midpoint + Vector3::new(0.0, -18.0, -60.0), // eye
+        island_midpoint + Vector3::new(0.0, -9.0, 0.0),    // center
+        Vector3::new(0.0, 1.0, 0.0),                       // up, perpendicular a center
     );
 
     let light = Light {
         // Frente a las esferas y ligeramente descentrada para que ambas tengan
         // una cara iluminada y una zona de sombra visible.
-        pos: Vector3::new(0.0, 0.0, 0.0),
+        pos: Vector3::new(16.0, -5.5, 16.0),
     };
 
     let rotation_speed = PI / 100.0;
@@ -364,19 +400,19 @@ fn main() {
 
         // para mover es yaw, pitch (x, y)
         if window.is_key_down(KeyboardKey::KEY_LEFT) {
-            camera.orbit(rotation_speed, 0.0);
+            camera.rotate(-rotation_speed, 0.0);
         }
 
         if window.is_key_down(KeyboardKey::KEY_RIGHT) {
-            camera.orbit(-rotation_speed, 0.0);
+            camera.rotate(rotation_speed, 0.0);
         }
 
         if window.is_key_down(KeyboardKey::KEY_UP) {
-            camera.orbit(0.0, rotation_speed);
+            camera.rotate(0.0, -rotation_speed);
         }
 
         if window.is_key_down(KeyboardKey::KEY_DOWN) {
-            camera.orbit(0.0, -rotation_speed);
+            camera.rotate(0.0, rotation_speed);
         }
 
         // Translate the camera without changing its viewing direction.

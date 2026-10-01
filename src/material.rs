@@ -28,8 +28,8 @@ impl FaceTextures {
 
     pub fn top_side_bottom(top: TextureId, side: TextureId, bottom: TextureId) -> Self {
         Self {
-            top: bottom,
-            bottom: top,
+            top,
+            bottom,
             front: side,
             back: side,
             left: side,
@@ -69,6 +69,7 @@ pub struct Material {
     pub albedo: [f32; 4],
     pub specular: f32,
     pub refraction_index: f32,
+    pub emission: f32,
 }
 
 pub struct MaterialLibrary {
@@ -88,6 +89,7 @@ fn material(
         albedo,
         specular,
         refraction_index,
+        emission: 0.0,
     }
 }
 
@@ -223,16 +225,34 @@ pub fn load_materials(path: impl AsRef<Path>) -> Result<MaterialLibrary, String>
 
     for (name, filename, albedo, specular, refraction_index) in uniform_materials {
         let texture = textures.load(path.join(filename))?;
-        materials.insert(
-            name,
-            material(
-                FaceTextures::all(texture),
-                albedo,
-                specular,
-                refraction_index,
-            ),
+        let mut loaded_material = material(
+            FaceTextures::all(texture),
+            albedo,
+            specular,
+            refraction_index,
         );
+        if name == "glowstone" {
+            loaded_material.emission = 0.85;
+        }
+        materials.insert(name, loaded_material);
     }
+
+    let leaves = textures.load(path.join("leaves.png"))?;
+    materials.insert(
+        "leaves",
+        material(FaceTextures::all(leaves), [0.9, 0.1, 0.0, 0.0], 8.0, 1.45),
+    );
+
+    let water = textures.load(path.join("water.png"))?;
+    materials.insert(
+        "water",
+        material(
+            FaceTextures::all(water),
+            [0.25, 0.2, 0.25, 0.65],
+            96.0,
+            1.33,
+        ),
+    );
 
     Ok(MaterialLibrary {
         materials,

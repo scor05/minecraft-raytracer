@@ -90,8 +90,6 @@ fn face_and_uv(
     max: Vector3,
     length: f32,
 ) -> (SurfaceFace, Vector2) {
-    // In this scene, negative Y is upward and positive Y goes down into the
-    // terrain. Image V coordinates also grow downward from the top row.
     let (face, u, v) = if normal.y < -0.5 {
         (
             SurfaceFace::Top,

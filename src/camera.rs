@@ -6,6 +6,7 @@ pub struct Camera {
     pub up: Vector3,
     pub forward: Vector3,
     pub right: Vector3,
+    world_up: Vector3,
     changed: bool,
 }
 
@@ -17,6 +18,7 @@ impl Camera {
             up,
             forward: Vector3::zero(),
             right: Vector3::zero(),
+            world_up: up.normalize(),
             changed: true,
         };
         camera.update_basis_vectors();
@@ -25,26 +27,33 @@ impl Camera {
 
     pub fn update_basis_vectors(&mut self) {
         self.forward = (self.center - self.eye).normalize();
-        self.right = self.forward.cross(self.up).normalize();
+        self.right = self.forward.cross(self.world_up).normalize();
         self.up = self.right.cross(self.forward);
         self.changed = true;
     }
 
-    pub fn orbit(&mut self, yaw: f32, pitch: f32) {
-        let relative_pos = self.eye - self.center;
-        let radius = relative_pos.length();
-        let current_yaw = relative_pos.z.atan2(relative_pos.x);
-        let current_pitch = (relative_pos.y / radius).asin();
+    pub fn rotate(&mut self, yaw: f32, pitch: f32) {
+        let view = self.center - self.eye;
+        let distance = view.length();
+        if distance <= f32::EPSILON {
+            return;
+        }
+
+        let direction = view.normalize();
+        let current_yaw = direction.z.atan2(direction.x);
+        let current_pitch = direction.y.clamp(-1.0, 1.0).asin();
 
         let new_yaw = current_yaw + yaw;
-        let new_pitch = (current_pitch + pitch).clamp(-1.5, 1.5); // Clamp to avoid gimbal lock
+        let new_pitch = (current_pitch + pitch).clamp(-1.5, 1.5);
         let cos_pitch = new_pitch.cos();
-        let new_relative_pos = Vector3::new(
-            radius * cos_pitch * new_yaw.cos(), // X component
-            radius * new_pitch.sin(),           // Y component
-            radius * cos_pitch * new_yaw.sin(), // Z component
+        let new_direction = Vector3::new(
+            cos_pitch * new_yaw.cos(),
+            new_pitch.sin(),
+            cos_pitch * new_yaw.sin(),
         );
-        self.eye = self.center + new_relative_pos;
+
+        // Rotate the view around the camera without moving the camera itself.
+        self.center = self.eye + new_direction * distance;
         self.update_basis_vectors();
     }
 
