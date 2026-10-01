@@ -14,8 +14,8 @@ use crate::framebuffer::Framebuffer;
 use crate::light::Light;
 use crate::material::load_materials;
 use crate::ray_intersect::{Intersect, RayIntersect};
-use crate::structures::{generate_castle, generate_tree};
-use crate::textures::TextureStore;
+use crate::structures::{castle_lantern_center, generate_castle, generate_tree};
+use crate::textures::{TextureId, TextureStore};
 use procedural::*;
 use rand::RngExt;
 use raylib::prelude::*;
@@ -134,13 +134,13 @@ fn cast_ray<T: RayIntersect>(
     objects: &[T],
     lights: &[Light],
     textures: &TextureStore,
+    skybox: TextureId,
     depth: u32, // depth de recursión
 ) -> Color {
-    let background_color = Color::new(20, 20, 20, 255);
     let mut closest_intersection: Option<Intersect> = None;
 
     if depth > MAX_REFLECTIONS as u32 {
-        return background_color;
+        return textures.sample_skybox(skybox, ray_direction);
     }
 
     // pintar esferas más cercanas sobre las más lejanas
@@ -156,7 +156,7 @@ fn cast_ray<T: RayIntersect>(
     }
 
     let Some(intersect) = closest_intersection else {
-        return background_color;
+        return textures.sample_skybox(skybox, ray_direction);
     };
 
     let texture_color = textures.sample(
@@ -202,6 +202,7 @@ fn cast_ray<T: RayIntersect>(
             objects,
             lights,
             textures,
+            skybox,
             depth + 1,
         ));
     }
@@ -225,6 +226,7 @@ fn cast_ray<T: RayIntersect>(
             objects,
             lights,
             textures,
+            skybox,
             depth + 1,
         ))
     } else {
@@ -259,6 +261,7 @@ fn draw<T: RayIntersect + Sync>(
     camera: &Camera,
     lights: &[Light],
     textures: &TextureStore,
+    skybox: TextureId,
     moving: &bool,
 ) {
     let width = fb.width as usize;
@@ -306,8 +309,15 @@ fn draw<T: RayIntersect + Sync>(
                         let camera_direction = Vector3::new(screen_x, screen_y, -1.0).normalize();
                         let world_direction = camera.basis_change(&camera_direction).normalize();
 
-                        *pixel =
-                            cast_ray(&camera.eye, &world_direction, objects, lights, textures, 0);
+                        *pixel = cast_ray(
+                            &camera.eye,
+                            &world_direction,
+                            objects,
+                            lights,
+                            textures,
+                            skybox,
+                            0,
+                        );
                     }
                 }
             });
@@ -382,8 +392,7 @@ fn main() {
         Vector3::new(0.0, 1.0, 0.0),                       // up, perpendicular a center
     );
 
-    let glowstone_center =
-        castle_origin + Vector3::new(2.0 * BLOCK_SIZE, -2.0 * BLOCK_SIZE, 2.0 * BLOCK_SIZE);
+    let lantern_center = castle_lantern_center(castle_origin, BLOCK_SIZE);
     let far_left_back_light = grass_island_center
         + Vector3::new(
             (ISLAND_RADIUS + 2) as f32 * BLOCK_SIZE,
@@ -394,9 +403,9 @@ fn main() {
         grass_island_center - Vector3::new(5.0 * BLOCK_SIZE, 2.0 * BLOCK_SIZE, 5.0 * BLOCK_SIZE);
     let lights = [
         Light {
-            pos: glowstone_center,
+            pos: lantern_center,
             intensity: 2.0,
-            source_radius: BLOCK_SIZE * 1.5,
+            source_radius: 1.5,
         },
         Light {
             pos: far_left_back_light,
@@ -410,9 +419,9 @@ fn main() {
         },
     ];
 
-    let rotation_speed = PI / 100.0;
-    let movement_speed = 0.75;
-    let zoom_speed = 0.3;
+    let rotation_speed = PI / 50.0;
+    let movement_speed = 1.25;
+    let zoom_speed = 1.0;
 
     while !window.window_should_close() {
         framebuffer.clear();
@@ -479,6 +488,7 @@ fn main() {
             &camera,
             &lights,
             &material_library.textures,
+            material_library.skybox,
             &moving,
         );
 

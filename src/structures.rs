@@ -25,12 +25,24 @@ fn block_at(
     }
 }
 
+pub fn castle_lantern_center(origin: Vector3, block_size: f32) -> Vector3 {
+    let lantern_size = block_size / 3.0;
+    Vector3::new(
+        origin.x + 2.0 * block_size,
+        // Hang the lantern one regular block below the level-five roof.
+        origin.y - 4.5 * block_size + block_size * 0.5 + lantern_size * 0.5 + block_size,
+        origin.z + 2.0 * block_size,
+    )
+}
+
 pub fn generate_castle(origin: Vector3, block_size: f32, materials: &Materials) -> Vec<Cube> {
     let stone = materials["stone_brick"];
     let glass = materials["glass"];
     let log = materials["log"];
     let carpet = materials["red_carpet"];
-    let glowstone = materials["glowstone"];
+    let lantern = materials["lantern"];
+    let gold = materials["gold"];
+    let barrel = materials["barrel"];
     let chest = materials["chest"];
     let mut blocks = Vec::new();
 
@@ -74,12 +86,31 @@ pub fn generate_castle(origin: Vector3, block_size: f32, materials: &Materials) 
     blocks.push(block_at(origin, 3, 8, 2, block_size, carpet));
     blocks.push(block_at(origin, 4, 8, 2, block_size, carpet));
 
-    // Glowstone block inside the hollow room. Its point light is created in main.
-    blocks.push(block_at(origin, 2, 2, 2, block_size, glowstone));
+    // A one-unit lantern hangs from the center of the inside ceiling.
+    blocks.push(Cube {
+        center: castle_lantern_center(origin, block_size),
+        length: 1.5,
+        material: lantern,
+    });
+
+    // A single gold block sits in the middle of the castle floor.
+    blocks.push(block_at(origin, 2, 1, 2, block_size, gold));
 
     // Two chests outside and to the right of the front doorway.
     blocks.push(block_at(origin, 3, 1, -1, block_size, chest));
     blocks.push(block_at(origin, 4, 1, -1, block_size, chest));
+
+    // A single barrel sits to the visual right of the doorway.
+    blocks.push(block_at(origin, 1, 1, -1, block_size, barrel));
+
+    // Barrel storage along the visual left wall: a row of one-high barrels
+    // with two additional barrels forming alternating two-high piles.
+    for z in 0..=4 {
+        blocks.push(block_at(origin, 5, 1, z, block_size, barrel));
+    }
+    for z in [1, 3] {
+        blocks.push(block_at(origin, 5, 2, z, block_size, barrel));
+    }
 
     blocks
 }

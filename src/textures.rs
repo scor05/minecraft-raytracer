@@ -1,5 +1,6 @@
-use raylib::prelude::{Color, Image, Vector2};
+use raylib::prelude::{Color, Image, Vector2, Vector3};
 use std::collections::HashMap;
+use std::f32::consts::PI;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -64,5 +65,18 @@ impl TextureStore {
         let y = (v * (texture.height - 1) as f32).round() as usize;
 
         texture.pixels[y * texture.width + x]
+    }
+
+    pub fn sample_skybox(&self, texture_id: TextureId, direction: &Vector3) -> Color {
+        if direction.length() <= f32::EPSILON {
+            return Color::BLACK;
+        }
+
+        let direction = direction.normalize();
+        // Map a world-space ray to an equirectangular panorama. Negative Y is
+        // upward in this scene, so it maps toward the top of the image.
+        let u = 0.5 + direction.x.atan2(direction.z) / (2.0 * PI);
+        let v = 0.5 + direction.y.clamp(-1.0, 1.0).asin() / PI;
+        self.sample(texture_id, Vector2::new(u, v))
     }
 }

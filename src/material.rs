@@ -75,6 +75,7 @@ pub struct Material {
 pub struct MaterialLibrary {
     pub materials: HashMap<&'static str, Material>,
     pub textures: TextureStore,
+    pub skybox: TextureId,
 }
 
 fn material(
@@ -96,6 +97,7 @@ fn material(
 pub fn load_materials(path: impl AsRef<Path>) -> Result<MaterialLibrary, String> {
     let path = path.as_ref();
     let mut textures = TextureStore::new();
+    let skybox = textures.load(path.join("skybox.png"))?;
 
     let dirt = textures.load(path.join("dirt.png"))?;
     let grass_top = textures.load(path.join("grass_top.png"))?;
@@ -150,15 +152,14 @@ pub fn load_materials(path: impl AsRef<Path>) -> Result<MaterialLibrary, String>
             1.5,
         ),
     );
-    materials.insert(
-        "lantern",
-        material(
-            FaceTextures::top_side_bottom(lantern_top, lantern_side, lantern_top),
-            [0.8, 0.2, 0.08, 0.0],
-            32.0,
-            1.5,
-        ),
+    let mut lantern = material(
+        FaceTextures::top_side_bottom(lantern_top, lantern_side, lantern_top),
+        [0.8, 0.2, 0.08, 0.0],
+        32.0,
+        1.5,
     );
+    lantern.emission = 0.85;
+    materials.insert("lantern", lantern);
 
     let uniform_materials = [
         (
@@ -252,5 +253,6 @@ pub fn load_materials(path: impl AsRef<Path>) -> Result<MaterialLibrary, String>
     Ok(MaterialLibrary {
         materials,
         textures,
+        skybox,
     })
 }
