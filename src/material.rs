@@ -175,7 +175,7 @@ pub fn load_materials(path: impl AsRef<Path>) -> Result<MaterialLibrary, String>
             96.0,
             1.55,
         ),
-        ("glass", "glass.png", [0.15, 0.1, 0.1, 0.85], 128.0, 1.5),
+        ("glass", "glass.png", [0.05, 0.2, 0.2, 0.9], 128.0, 1.5),
         (
             "glowstone",
             "glowstone.png",
@@ -246,12 +246,7 @@ pub fn load_materials(path: impl AsRef<Path>) -> Result<MaterialLibrary, String>
     let water = textures.load(path.join("water.png"))?;
     materials.insert(
         "water",
-        material(
-            FaceTextures::all(water),
-            [0.25, 0.2, 0.25, 0.65],
-            96.0,
-            1.33,
-        ),
+        material(FaceTextures::all(water), [0.1, 0.25, 0.35, 0.8], 96.0, 1.33),
     );
 
     Ok(MaterialLibrary {

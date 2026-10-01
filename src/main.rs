@@ -119,7 +119,7 @@ fn cast_shadow<T: RayIntersect>(
         // sale desde el punto de intersecto con dirección hasta la dirección de la luz
         if let Some(shadow_intersect) = o.ray_intersect(&light_dir, &shadow_origin) {
             // solo bloquea la luz si el objeto está entre el punto y la luz.
-            if shadow_intersect.distance < light_distance {
+            if shadow_intersect.distance < light_distance - light.source_radius.max(0.0) {
                 return 1.0;
             }
         }
@@ -132,7 +132,7 @@ fn cast_ray<T: RayIntersect>(
     ray_origin: &Vector3,
     ray_direction: &Vector3,
     objects: &[T],
-    light: &Light,
+    lights: &[Light],
     textures: &TextureStore,
     depth: u32, // depth de recursión
 ) -> Color {
@@ -159,13 +159,6 @@ fn cast_ray<T: RayIntersect>(
         return background_color;
     };
 
-    let light_dir = (light.pos - intersect.point).normalize();
-
-    let shadow_intensity = cast_shadow(&intersect, light, objects);
-    let light_intensity = 1.0 - shadow_intensity;
-
-    // diffuse
-    let diffuse_intensity = intersect.normal.dot(light_dir).max(0.0);
     let texture_color = textures.sample(
         intersect.material.textures.for_face(intersect.face),
         intersect.uv,
@@ -175,22 +168,28 @@ fn cast_ray<T: RayIntersect>(
         texture_color.g as f32 * intersect.material.diffuse.g as f32 / 255.0,
         texture_color.b as f32 * intersect.material.diffuse.b as f32 / 255.0,
     );
-    let diffuse =
-        material_color * diffuse_intensity * intersect.material.albedo[0] * light_intensity;
-
-    // refleccion
-    let reflect_dir = reflect(&-light_dir, &intersect.normal);
     let view_dir = (*ray_origin - intersect.point).normalize();
+    let mut diffuse = Vector3::zero();
+    let mut specular = Vector3::zero();
 
-    // Igual de teoría de Phong: S = V · R, con V s
-    let specular_intensity = view_dir
-        .dot(reflect_dir)
-        .max(0.0)
-        .powf(intersect.material.specular)
-        * intersect.material.albedo[1];
+    for light in lights {
+        let light_dir = (light.pos - intersect.point).normalize();
+        let shadow = cast_shadow(&intersect, light, objects);
+        let received_intensity = (1.0 - shadow) * light.intensity.max(0.0);
 
-    // la luz se considera como blanca (1,1,1) en vector normalizado
-    // se multiplica por 255 para que esté en rango de alfa de RGB de u8 (0-255)
+        let diffuse_intensity = intersect.normal.dot(light_dir).max(0.0);
+        diffuse +=
+            material_color * diffuse_intensity * intersect.material.albedo[0] * received_intensity;
+
+        let reflect_dir = reflect(&-light_dir, &intersect.normal);
+        let specular_intensity = view_dir
+            .dot(reflect_dir)
+            .max(0.0)
+            .powf(intersect.material.specular)
+            * intersect.material.albedo[1]
+            * received_intensity;
+        specular += Vector3::new(1.0, 1.0, 1.0) * 255.0 * specular_intensity;
+    }
 
     let mut reflect_color = Vector3::zero();
     let reflectivity = intersect.material.albedo[2];
@@ -201,7 +200,7 @@ fn cast_ray<T: RayIntersect>(
             &reflect_origin,
             &reflect_dir,
             objects,
-            light,
+            lights,
             textures,
             depth + 1,
         ));
@@ -216,7 +215,6 @@ fn cast_ray<T: RayIntersect>(
         ) {
             refract_dir
         } else {
-            // Total internal reflection: no refracted ray is possible.
             reflect(ray_direction, &intersect.normal).normalize()
         };
 
@@ -225,7 +223,7 @@ fn cast_ray<T: RayIntersect>(
             &refract_origin,
             &refract_dir,
             objects,
-            light,
+            lights,
             textures,
             depth + 1,
         ))
@@ -233,11 +231,10 @@ fn cast_ray<T: RayIntersect>(
         Vector3::zero()
     };
 
-    let specular = Vector3::new(1.0, 1.0, 1.0) * 255.0 * specular_intensity * light_intensity; // luz * intensidad
     let reflection = reflect_color * reflectivity;
     let refraction = refract_color * transparency;
-
     let emission = material_color * intersect.material.emission;
+
     let color = diffuse + specular + reflection + refraction + emission;
 
     vector_to_color(color)
@@ -260,7 +257,7 @@ fn draw<T: RayIntersect + Sync>(
     fb: &mut Framebuffer,
     objects: &[T],
     camera: &Camera,
-    light: &Light,
+    lights: &[Light],
     textures: &TextureStore,
     moving: &bool,
 ) {
@@ -310,7 +307,7 @@ fn draw<T: RayIntersect + Sync>(
                         let world_direction = camera.basis_change(&camera_direction).normalize();
 
                         *pixel =
-                            cast_ray(&camera.eye, &world_direction, objects, light, textures, 0);
+                            cast_ray(&camera.eye, &world_direction, objects, lights, textures, 0);
                     }
                 }
             });
@@ -385,11 +382,33 @@ fn main() {
         Vector3::new(0.0, 1.0, 0.0),                       // up, perpendicular a center
     );
 
-    let light = Light {
-        // Frente a las esferas y ligeramente descentrada para que ambas tengan
-        // una cara iluminada y una zona de sombra visible.
-        pos: Vector3::new(16.0, -5.5, 16.0),
-    };
+    let glowstone_center =
+        castle_origin + Vector3::new(2.0 * BLOCK_SIZE, -2.0 * BLOCK_SIZE, 2.0 * BLOCK_SIZE);
+    let far_left_back_light = grass_island_center
+        + Vector3::new(
+            (ISLAND_RADIUS + 2) as f32 * BLOCK_SIZE,
+            -4.0 * BLOCK_SIZE,
+            (ISLAND_RADIUS + 2) as f32 * BLOCK_SIZE,
+        );
+    let close_left_light =
+        grass_island_center - Vector3::new(5.0 * BLOCK_SIZE, 2.0 * BLOCK_SIZE, 5.0 * BLOCK_SIZE);
+    let lights = [
+        Light {
+            pos: glowstone_center,
+            intensity: 2.0,
+            source_radius: BLOCK_SIZE * 1.5,
+        },
+        Light {
+            pos: far_left_back_light,
+            intensity: 1.4,
+            source_radius: 0.0,
+        },
+        Light {
+            pos: close_left_light,
+            intensity: 1.7,
+            source_radius: 0.0,
+        },
+    ];
 
     let rotation_speed = PI / 100.0;
     let movement_speed = 0.75;
@@ -415,7 +434,6 @@ fn main() {
             camera.rotate(0.0, rotation_speed);
         }
 
-        // Translate the camera without changing its viewing direction.
         if window.is_key_down(KeyboardKey::KEY_W) {
             camera.move_forward(movement_speed);
         }
@@ -459,7 +477,7 @@ fn main() {
             &mut framebuffer,
             &objects,
             &camera,
-            &light,
+            &lights,
             &material_library.textures,
             &moving,
         );

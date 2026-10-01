@@ -156,13 +156,14 @@ pub fn replace_top_layer_with_river(
             continue;
         }
 
-        // A subtle bend keeps the river from looking like a perfectly cut line.
-        let river_z = depth - 4
-            + match grid_x.rem_euclid(6) {
-                0 | 1 => 0,
-                2 | 5 => 1,
-                _ => 2,
-            };
+        // Keep the river on the camera-facing side of the island. Its subtle
+        // bend is mirrored from the old back-side path.
+        let bend = match grid_x.rem_euclid(6) {
+            0 | 1 => 0,
+            2 | 5 => 1,
+            _ => 2,
+        };
+        let river_z = (3 - bend).clamp(0, depth - 1);
 
         if grid_z == river_z {
             block.material = water;

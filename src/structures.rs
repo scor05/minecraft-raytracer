@@ -74,7 +74,7 @@ pub fn generate_castle(origin: Vector3, block_size: f32, materials: &Materials) 
     blocks.push(block_at(origin, 3, 8, 2, block_size, carpet));
     blocks.push(block_at(origin, 4, 8, 2, block_size, carpet));
 
-    // Self-lit block inside the hollow room.
+    // Glowstone block inside the hollow room. Its point light is created in main.
     blocks.push(block_at(origin, 2, 2, 2, block_size, glowstone));
 
     // Two chests outside and to the right of the front doorway.
